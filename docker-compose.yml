@@ -2,33 +2,63 @@ version: "3.4"
 
 services:
   app:
-    image: learning-docker:deploy-node
+    image: dieuduytancktv/deploy-docker-node:node-mongodb-redis
     volumes:
       - ./public/images:/app/public/images
-      # - ./:/app # mount từ môi trường gốc vào trong để nếu các bạn thay đổi code thì bên trong sẽ tự động cập nhật
-    environment: # phần này ta định nghĩa ở file .env nhé
-      - DB_HOST=${DB_HOST}
-      - DB_NAME=${DB_NAME}
-      - REDIS_HOST=${REDIS_HOST}
-      - REDIS_PORT=${REDIS_PORT}
-      - PORT=${PORT}
+    env_file: .env
     ports:
-      - "${PORT}:${PORT}" # phần này ta định nghĩa ở file .env nhé
+      - "${PORT}:${PORT}"
     restart: unless-stopped
     depends_on:
-        - redis
-        - db
-  
+      - redis
+      - db
+    networks:
+      - db-network
+      - cache-network
+    healthcheck:
+      test: wget --quiet --tries=1 --spider http://localhost:${PORT} || exit 1z
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   db:
-    image: mongo
+    image: mongo:4.4
     volumes:
       - .docker/data/db:/data/db
+      - .docker/db-entrypoint.sh:/docker-entrypoint-initdb.d/db-entrypoint.sh
     restart: unless-stopped
-    user: "1000:1000"
-  
+    networks:
+      - db-network
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${DB_ROOT_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${DB_ROOT_PASS}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongo mongodb://${DB_USER}:${DB_PASSWORD}@localhost:${DB_PORT}/?authSource=${DB_NAME} --quiet
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   redis:
     image: redis:5-alpine
     volumes:
       - .docker/data/redis:/data
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     restart: unless-stopped
-    user: "1000:1000"
+    networks:
+      - cache-network
+    healthcheck:
+      test: ["CMD", "redis-cli","ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    user: redis
+
+networks:
+  cache-network:
+    driver: bridge
+  db-network:
+    driver: bridge

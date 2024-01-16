@@ -1,0 +1,49 @@
+variables:
+  IMAGE_TAG: latest
+  IMAGE_NAME_BACKEND: deploy-docker-node
+  CONTAINER_NAME_BACKEND: deploy-docker-node
+   
+stages:
+  - build
+  - test
+  - deploy
+
+build:
+  stage: build
+  before_script:
+    - docker login -u $REGISTRY_USER -p $REGISTRY_PASS $CI_REGISTRY
+  script:
+    - docker build -t $IMAGE_NAME_BACKEND:$IMAGE_TAG .
+    - docker image tag $IMAGE_NAME_BACKEND:$IMAGE_TAG $CI_REGISTRY/$IMAGE_NAME_BACKEND:$IMAGE_TAG
+    - docker push $CI_REGISTRY/$IMAGE_NAME_BACKEND:$IMAGE_TAG
+    - docker image rm -f $IMAGE_NAME_BACKEND:$IMAGE_TAG
+  only:
+    - staging
+
+test:
+  stage: test
+  script:
+    - ssh root@$SERVER_TESTING "
+      docker login -u $REGISTRY_USER -p $REGISTRY_PASS $CI_REGISTRY &&
+      cd $PATH_TO_PROJECT &&
+      docker-compose down &&
+      docker pull $CI_REGISTRY/$IMAGE_NAME_BACKEND:$IMAGE_TAG &&
+      docker-compose up -d &&
+      docker image prune -f &&
+      sleep 15 &&
+      docker-compose exec -T app npx mocha test.js"
+  only:
+    - staging
+
+deploy:
+  stage: deploy
+  script:
+    - ssh root@$SERVER_TESTING "
+      docker login -u $REGISTRY_USER -p $REGISTRY_PASS $CI_REGISTRY &&
+      cd $PATH_TO_PROJECT &&
+      docker-compose down &&
+      docker pull $CI_REGISTRY/$IMAGE_NAME_BACKEND:$IMAGE_TAG &&
+      docker-compose up -d &&
+      docker image prune -f"
+  only:
+    - staging
